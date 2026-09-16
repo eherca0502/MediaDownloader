@@ -285,9 +285,7 @@ namespace MediaDownloader.Services
                 );
             }
 
-            Directory.CreateDirectory(
-                savePath
-            );
+            Directory.CreateDirectory(savePath);
 
             string extension =
                 format
@@ -304,14 +302,9 @@ namespace MediaDownloader.Services
                     .Trim()
                     .ToLowerInvariant();
 
-
-            string height = ExtractHeight(
-                qualityValue
-            );
-
+            string height = ExtractHeight(qualityValue);
 
             string formatArguments;
-
 
             if (type == "audio")
             {
@@ -330,7 +323,8 @@ namespace MediaDownloader.Services
 
                         formatArguments =
                             "-x " +
-                            "--audio-format m4a";
+                            "--audio-format m4a " +
+                            "--audio-quality 0";
 
                         break;
 
@@ -353,21 +347,21 @@ namespace MediaDownloader.Services
                 }
             }
 
-
-            else
+            else if (type == "video")
             {
                 string videoFormat;
 
                 if (string.IsNullOrWhiteSpace(height))
                 {
                     videoFormat =
-                        "bestvideo+bestaudio/best";
+                        "bestvideo[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]/bestvideo";
                 }
                 else
                 {
                     videoFormat =
-                        $"bestvideo[height<={height}]+bestaudio/" +
-                        $"best[height<={height}]";
+                        $"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]/" +
+                        $"bestvideo[height<={height}][ext=mp4]/" +
+                        $"bestvideo[height<={height}]";
                 }
 
                 switch (extension)
@@ -376,7 +370,7 @@ namespace MediaDownloader.Services
 
                         formatArguments =
                             $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mp4";
+                            "--remux-video mp4";
 
                         break;
 
@@ -400,19 +394,71 @@ namespace MediaDownloader.Services
 
                         formatArguments =
                             $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mp4";
+                            "--remux-video mp4";
 
                         break;
                 }
             }
 
+            else
+            {
+                string videoFormat;
+
+                if (string.IsNullOrWhiteSpace(height))
+                {
+                    videoFormat =
+                        "bestvideo+bestaudio/best";
+                }
+                else
+                {
+                    videoFormat =
+                        $"bestvideo[height<={height}]+bestaudio/" +
+                        $"best[height<={height}]";
+                }
+
+                switch (extension)
+                {
+                    case "mp4":
+
+                        formatArguments =
+                            $"-f \"{videoFormat}\" " +
+                            "--merge-output-format mp4 " +
+                            "--ppa \"Merger+ffmpeg_o:-c:a aac -b:a 192k\"";
+
+                        break;
+
+                    case "mkv":
+
+                        formatArguments =
+                            $"-f \"{videoFormat}\" " +
+                            "--merge-output-format mkv";
+
+                        break;
+
+                    case "webm":
+
+                        formatArguments =
+                            $"-f \"{videoFormat}\" " +
+                            "--merge-output-format webm";
+
+                        break;
+
+                    default:
+
+                        formatArguments =
+                            $"-f \"{videoFormat}\" " +
+                            "--merge-output-format mp4 " +
+                            "--ppa \"Merger+ffmpeg_o:-c:a aac -b:a 192k\"";
+
+                        break;
+                }
+            }
 
             string outputTemplate =
                 Path.Combine(
                     savePath,
                     "%(title)s.%(ext)s"
                 );
-
 
             string arguments =
                 $"--newline " +
@@ -426,8 +472,6 @@ namespace MediaDownloader.Services
             statusCallback?.Invoke(
                 "Iniciando descarga..."
             );
-
-            
 
             ProcessResult result =
                 await _processService.ExecuteWithProgressAsync(
@@ -446,26 +490,22 @@ namespace MediaDownloader.Services
 
             cancellationToken.ThrowIfCancellationRequested();
 
-
             if (!result.Success)
             {
-                throw new Exception(
+                string error =
                     string.IsNullOrWhiteSpace(result.Error)
                         ? "La descarga no pudo completarse."
-                        : result.Error
-                );
+                        : result.Error.Trim();
+
+                throw new Exception(error);
             }
 
-
-            progressCallback?.Invoke(
-                100
-            );
+            progressCallback?.Invoke(100);
 
             statusCallback?.Invoke(
                 "Descarga completada."
             );
         }
-
 
         private static string ExtractHeight(
             string quality)
@@ -771,7 +811,7 @@ namespace MediaDownloader.Services
             };
         }
 
-     
+
 
         private static int GetInt(
             JsonElement element,

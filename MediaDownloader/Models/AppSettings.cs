@@ -15,7 +15,7 @@ namespace MediaDownloader.Models
 
         public string DefaultType { get; set; } =
             "Video";
-
+    
         public string DefaultQuality { get; set; } =
             "Mejor calidad";
 
@@ -35,6 +35,8 @@ namespace MediaDownloader.Models
 
         public bool ShowNotifications { get; set; } =
             true;
+        public  bool ShowCompletionMessage { get; set; } = true;
+
     }
 }
 
