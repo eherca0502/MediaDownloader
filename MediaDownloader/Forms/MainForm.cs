@@ -15,6 +15,10 @@ namespace MediaDownloader.Forms
     {
         private readonly VideoService _videoService;
         private readonly HistoryService _historyService;
+        private readonly SettingsService _settingsService;
+
+        private AppSettings _settings =
+            new AppSettings();
 
         private CancellationTokenSource? _downloadCancellationTokenSource;
         private VideoInfo? _currentVideo;
@@ -29,15 +33,17 @@ namespace MediaDownloader.Forms
 
             _videoService = new VideoService(processService);
             _historyService = new HistoryService();
+            _settingsService = new SettingsService();
 
             InitializeForm();
             ConfigureEvents();
+
+            Load += MainForm_Load;
         }
 
         private void InitializeForm()
         {
             cmbQuality.SelectedIndex = 0;
-            cmbFormat.SelectedIndex = 0;
 
             txtSavePath.Text =
                 Environment.GetFolderPath(
@@ -55,6 +61,81 @@ namespace MediaDownloader.Forms
             btnDownload.Enabled = false;
 
             SelectDownloadType("video");
+        }
+
+        private async void MainForm_Load(
+            object? sender,
+            EventArgs e)
+        {
+            await LoadSettingsAsync();
+        }
+
+        private async Task LoadSettingsAsync()
+        {
+            try
+            {
+                _settings =
+                    await _settingsService.GetSettingsAsync();
+
+                txtSavePath.Text =
+                    _settings.DownloadPath;
+
+                string defaultType =
+                    _settings.DefaultType.Trim();
+
+                if (defaultType.Equals(
+                    "Audio",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectDownloadType("audio");
+                }
+                else if (defaultType.Equals(
+                    "Video + Audio",
+                    StringComparison.OrdinalIgnoreCase) ||
+                    defaultType.Equals(
+                    "VideoAudio",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectDownloadType("videoaudio");
+                }
+                else
+                {
+                    SelectDownloadType("video");
+                }
+
+                int qualityIndex =
+                    cmbQuality.Items.IndexOf(
+                        _settings.DefaultQuality
+                    );
+
+                cmbQuality.SelectedIndex =
+                    qualityIndex >= 0
+                        ? qualityIndex
+                        : 0;
+
+                int formatIndex =
+                    cmbFormat.Items.IndexOf(
+                        _settings.DefaultFormat
+                    );
+
+                cmbFormat.SelectedIndex =
+                    formatIndex >= 0
+                        ? formatIndex
+                        : 0;
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text =
+                    "No fue posible cargar los ajustes.";
+
+                MessageBox.Show(
+                    "No fue posible cargar la configuración." + "\n\n" +
+                    ex.Message,
+                    "Ajustes",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+            }
         }
 
         private void ConfigureEvents()
@@ -168,17 +249,15 @@ namespace MediaDownloader.Forms
         private async Task LoadThumbnailAsync(
             string url)
         {
+            string? thumbnailPath = null;
+
             try
             {
-                string? thumbnailPath =
+                thumbnailPath =
                     await _videoService.DownloadThumbnailAsync(url);
 
-                if (string.IsNullOrWhiteSpace(thumbnailPath))
-                {
-                    return;
-                }
-
-                if (!File.Exists(thumbnailPath))
+                if (string.IsNullOrWhiteSpace(thumbnailPath) ||
+                    !File.Exists(thumbnailPath))
                 {
                     return;
                 }
@@ -207,6 +286,31 @@ namespace MediaDownloader.Forms
             {
                 picThumbnail.Visible = false;
                 lblThumbnail.Visible = true;
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(thumbnailPath))
+                {
+                    try
+                    {
+                        string? directory =
+                            Path.GetDirectoryName(thumbnailPath);
+
+                        if (File.Exists(thumbnailPath))
+                        {
+                            File.Delete(thumbnailPath);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(directory) &&
+                            Directory.Exists(directory))
+                        {
+                            Directory.Delete(directory, recursive: true);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
             }
         }
 
@@ -282,12 +386,13 @@ namespace MediaDownloader.Forms
                 _downloadCancellationTokenSource =
                     new CancellationTokenSource();
 
-                await _videoService.DownloadAsync(
-                    url,
-                    savePath,
-                    downloadType,
-                    quality,
-                    format,
+                string downloadedFile =
+                    await _videoService.DownloadAsync(
+                        url,
+                        savePath,
+                        downloadType,
+                        quality,
+                        format,
 
 
                     progress =>
@@ -350,22 +455,6 @@ namespace MediaDownloader.Forms
                 );
 
 
-                string downloadedFile =
-                    FindDownloadedFile(
-                        savePath,
-                        _currentVideo.Title,
-                        format
-                    );
-
-                if (string.IsNullOrWhiteSpace(downloadedFile))
-                {
-                    downloadedFile =
-                        FindMostRecentFile(
-                            savePath
-                        );
-                }
-
-
                 DownloadHistory history =
                     new DownloadHistory
                     {
@@ -398,21 +487,34 @@ namespace MediaDownloader.Forms
                             "Completada"
                     };
 
-                await _historyService.AddAsync(history);
+                if (_settings.SaveHistory)
+                {
+                    await _historyService.AddAsync(history);
+                }
 
                 progressBar.Value = 100;
                 lblProgress.Text = "100%";
 
                 lblStatus.Text =
-                    "Descarga completada y guardada en historial.";
+                    _settings.SaveHistory
+                        ? "Descarga completada y guardada en historial."
+                        : "Descarga completada.";
 
-                MessageBox.Show(
-                    "La descarga se completó correctamente.\n\n" +
-                    "También fue agregada al historial.",
-                    "MediaDownloader",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
+                if (_settings.ShowNotifications)
+                {
+                    string historyMessage =
+                        _settings.SaveHistory
+                            ? "\n\nTambién fue agregada al historial."
+                            : string.Empty;
+
+                    MessageBox.Show(
+                        "La descarga se completó correctamente." +
+                        historyMessage,
+                        "MediaDownloader",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information
+                    );
+                }
             }
             catch (OperationCanceledException)
             {
@@ -459,17 +561,20 @@ namespace MediaDownloader.Forms
                 return;
             }
 
-            DialogResult result =
-                MessageBox.Show(
-                    "¿Seguro que deseas cancelar la descarga?",
-                    "Cancelar descarga",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question
-                );
-
-            if (result != DialogResult.Yes)
+            if (_settings.ConfirmCancel)
             {
-                return;
+                DialogResult result =
+                    MessageBox.Show(
+                        "¿Seguro que deseas cancelar la descarga?",
+                        "Cancelar descarga",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question
+                    );
+
+                if (result != DialogResult.Yes)
+                {
+                    return;
+                }
             }
 
             lblStatus.Text =
@@ -872,80 +977,6 @@ namespace MediaDownloader.Forms
         }
 
 
-        private string FindDownloadedFile(
-            string directory,
-            string title,
-            string format)
-        {
-            try
-            {
-                if (!Directory.Exists(directory))
-                {
-                    return string.Empty;
-                }
-
-                string extension =
-                    "." +
-                    format.Trim().ToLowerInvariant();
-
-                string[] files =
-                    Directory.GetFiles(
-                        directory,
-                        "*" + extension
-                    );
-
-                if (files.Length == 0)
-                {
-                    return string.Empty;
-                }
-
-                return files
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
-                    .FirstOrDefault()
-                    ?? string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-        private string FindMostRecentFile(
-            string directory)
-        {
-            try
-            {
-                if (!Directory.Exists(directory))
-                {
-                    return string.Empty;
-                }
-
-                return Directory
-                    .GetFiles(directory)
-                    .Where(file =>
-                        !file.EndsWith(
-                            ".part",
-                            StringComparison.OrdinalIgnoreCase
-                        ) &&
-                        !file.EndsWith(
-                            ".ytdl",
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
-                    .FirstOrDefault()
-                    ?? string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
-
         private void MainForm_FormClosing(
             object? sender,
             FormClosingEventArgs e)
@@ -999,10 +1030,14 @@ namespace MediaDownloader.Forms
             downloadsForm.ShowDialog(this);
         }
 
-        private void btnSettings_Click(object sender, EventArgs e)
+        private async void btnSettings_Click(object sender, EventArgs e)
         {
             using SettingsForm settingsForm = new SettingsForm();
-            settingsForm.ShowDialog(this);
+
+            if (settingsForm.ShowDialog(this) == DialogResult.OK)
+            {
+                await LoadSettingsAsync();
+            }
         }
     }
 }

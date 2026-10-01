@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -37,24 +38,23 @@ namespace MediaDownloader.Services
             );
         }
 
-
         public async Task<VideoInfo?> GetVideoInfoAsync(
             string url,
             CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(_ytDlpPath))
-            {
-                throw new FileNotFoundException(
-                    "No se encontró yt-dlp.exe.",
-                    _ytDlpPath
-                );
-            }
+            ValidateUrl(url);
+            EnsureToolExists(_ytDlpPath, "yt-dlp.exe");
 
-            string arguments =
-                $"--dump-single-json " +
-                $"--no-warnings " +
-                $"--skip-download " +
-                $"\"{url}\"";
+            List<string> arguments = new List<string>
+            {
+                "--dump-single-json",
+                "--no-warnings",
+                "--skip-download",
+                "--ignore-config",
+                "--no-plugin-dirs",
+                "--",
+                url.Trim()
+            };
 
             ProcessResult result =
                 await _processService.ExecuteAsync(
@@ -66,9 +66,10 @@ namespace MediaDownloader.Services
             if (!result.Success)
             {
                 throw new Exception(
-                    string.IsNullOrWhiteSpace(result.Error)
-                        ? "No fue posible analizar el video."
-                        : result.Error
+                    GetProcessError(
+                        result.Error,
+                        "No fue posible analizar el video."
+                    )
                 );
             }
 
@@ -79,67 +80,41 @@ namespace MediaDownloader.Services
                 );
             }
 
-            return ParseVideoInfo(
-                result.Output
-            );
+            return ParseVideoInfo(result.Output);
         }
-
 
         public async Task<string?> DownloadThumbnailAsync(
             string url,
             CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(_ytDlpPath))
-            {
-                throw new FileNotFoundException(
-                    "No se encontró yt-dlp.exe.",
-                    _ytDlpPath
-                );
-            }
+            ValidateUrl(url);
+            EnsureToolExists(_ytDlpPath, "yt-dlp.exe");
 
-            string thumbnailDirectory =
-                Path.Combine(
-                    Path.GetTempPath(),
-                    "MediaDownloader",
-                    "Thumbnails"
-                );
-
-            Directory.CreateDirectory(
-                thumbnailDirectory
+            string thumbnailDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "MediaDownloader",
+                Guid.NewGuid().ToString("N")
             );
 
-            try
-            {
-                foreach (string file in
-                    Directory.GetFiles(
-                        thumbnailDirectory))
-                {
-                    try
-                    {
-                        File.Delete(file);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-            catch
-            {
-            }
+            Directory.CreateDirectory(thumbnailDirectory);
 
-            string filePrefix =
-                Path.Combine(
-                    thumbnailDirectory,
-                    "thumbnail"
-                );
+            string filePrefix = Path.Combine(
+                thumbnailDirectory,
+                "thumbnail"
+            );
 
-            string arguments =
-                $"--write-thumbnail " +
-                $"--convert-thumbnails jpg " +
-                $"--skip-download " +
-                $"--no-warnings " +
-                $"-o \"{filePrefix}.%(ext)s\" " +
-                $"\"{url}\"";
+            List<string> arguments = new List<string>
+            {
+                "--write-thumbnail",
+                "--convert-thumbnails", "jpg",
+                "--skip-download",
+                "--no-warnings",
+                "--ignore-config",
+                "--no-plugin-dirs",
+                "-o", $"{filePrefix}.%(ext)s",
+                "--",
+                url.Trim()
+            };
 
             ProcessResult result =
                 await _processService.ExecuteAsync(
@@ -152,70 +127,38 @@ namespace MediaDownloader.Services
 
             if (!result.Success)
             {
+                TryDeleteDirectory(thumbnailDirectory);
+
                 throw new Exception(
-                    string.IsNullOrWhiteSpace(result.Error)
-                        ? "No fue posible descargar la miniatura."
-                        : result.Error
+                    GetProcessError(
+                        result.Error,
+                        "No fue posible descargar la miniatura."
+                    )
                 );
             }
 
             string? imageFile =
                 Directory
-                    .GetFiles(
-                        thumbnailDirectory,
-                        "thumbnail*.jpg"
-                    )
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
+                    .GetFiles(thumbnailDirectory, "thumbnail*.jpg")
+                    .OrderByDescending(File.GetLastWriteTime)
                     .FirstOrDefault();
 
-            if (!string.IsNullOrWhiteSpace(imageFile))
-            {
-                return imageFile;
-            }
-
-            imageFile =
+            imageFile ??=
                 Directory
-                    .GetFiles(
-                        thumbnailDirectory,
-                        "thumbnail*.jpeg"
-                    )
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
+                    .GetFiles(thumbnailDirectory, "thumbnail*.jpeg")
+                    .OrderByDescending(File.GetLastWriteTime)
                     .FirstOrDefault();
 
-            if (!string.IsNullOrWhiteSpace(imageFile))
-            {
-                return imageFile;
-            }
-
-            imageFile =
+            imageFile ??=
                 Directory
-                    .GetFiles(
-                        thumbnailDirectory,
-                        "thumbnail*.png"
-                    )
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
+                    .GetFiles(thumbnailDirectory, "thumbnail*.png")
+                    .OrderByDescending(File.GetLastWriteTime)
                     .FirstOrDefault();
 
-            if (!string.IsNullOrWhiteSpace(imageFile))
-            {
-                return imageFile;
-            }
-
-            imageFile =
+            imageFile ??=
                 Directory
-                    .GetFiles(
-                        thumbnailDirectory,
-                        "thumbnail*.webp"
-                    )
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
+                    .GetFiles(thumbnailDirectory, "thumbnail*.webp")
+                    .OrderByDescending(File.GetLastWriteTime)
                     .FirstOrDefault();
 
             if (!string.IsNullOrWhiteSpace(imageFile))
@@ -223,27 +166,23 @@ namespace MediaDownloader.Services
                 return imageFile;
             }
 
-            string[] files =
-                Directory.GetFiles(
-                    thumbnailDirectory
-                );
+            string[] files = Directory.GetFiles(thumbnailDirectory);
 
             if (files.Length > 0)
             {
                 return files
-                    .OrderByDescending(
-                        File.GetLastWriteTime
-                    )
+                    .OrderByDescending(File.GetLastWriteTime)
                     .First();
             }
+
+            TryDeleteDirectory(thumbnailDirectory);
 
             throw new Exception(
                 "yt-dlp terminó correctamente, pero no se encontró el archivo de miniatura."
             );
         }
 
-
-        public async Task DownloadAsync(
+        public async Task<string> DownloadAsync(
             string url,
             string savePath,
             string downloadType,
@@ -253,29 +192,9 @@ namespace MediaDownloader.Services
             Action<string>? statusCallback = null,
             CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(_ytDlpPath))
-            {
-                throw new FileNotFoundException(
-                    "No se encontró yt-dlp.exe.",
-                    _ytDlpPath
-                );
-            }
-
-            if (!File.Exists(_ffmpegPath))
-            {
-                throw new FileNotFoundException(
-                    "No se encontró ffmpeg.exe. Colócalo dentro de la carpeta Tools.",
-                    _ffmpegPath
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                throw new ArgumentException(
-                    "La URL no puede estar vacía.",
-                    nameof(url)
-                );
-            }
+            ValidateUrl(url);
+            EnsureToolExists(_ytDlpPath, "yt-dlp.exe");
+            EnsureToolExists(_ffmpegPath, "ffmpeg.exe");
 
             if (string.IsNullOrWhiteSpace(savePath))
             {
@@ -285,206 +204,158 @@ namespace MediaDownloader.Services
                 );
             }
 
-            Directory.CreateDirectory(savePath);
+            if (string.IsNullOrWhiteSpace(downloadType))
+            {
+                throw new ArgumentException(
+                    "El tipo de descarga no puede estar vacío.",
+                    nameof(downloadType)
+                );
+            }
+
+            string fullSavePath = Path.GetFullPath(savePath.Trim());
+            Directory.CreateDirectory(fullSavePath);
 
             string extension =
-                format
-                    .Trim()
-                    .ToLowerInvariant();
+                format.Trim().ToLowerInvariant();
 
             string type =
-                downloadType
-                    .Trim()
-                    .ToLowerInvariant();
+                downloadType.Trim().ToLowerInvariant();
 
             string qualityValue =
-                quality
-                    .Trim()
-                    .ToLowerInvariant();
+                quality.Trim().ToLowerInvariant();
 
             string height = ExtractHeight(qualityValue);
 
-            string formatArguments;
+            List<string> arguments = new List<string>
+            {
+                "--newline",
+                "--no-warnings",
+                "--progress",
+                "--ignore-config",
+                "--no-plugin-dirs",
+                "--windows-filenames",
+                "--ffmpeg-location", _toolsPath
+            };
 
             if (type == "audio")
             {
+                arguments.Add("--extract-audio");
+
                 switch (extension)
                 {
-                    case "mp3":
-
-                        formatArguments =
-                            "-x " +
-                            "--audio-format mp3 " +
-                            "--audio-quality 0";
-
-                        break;
-
                     case "m4a":
-
-                        formatArguments =
-                            "-x " +
-                            "--audio-format m4a " +
-                            "--audio-quality 0";
-
+                        arguments.Add("--audio-format");
+                        arguments.Add("m4a");
+                        arguments.Add("--audio-quality");
+                        arguments.Add("0");
                         break;
 
                     case "wav":
-
-                        formatArguments =
-                            "-x " +
-                            "--audio-format wav";
-
+                        arguments.Add("--audio-format");
+                        arguments.Add("wav");
                         break;
 
+                    case "mp3":
                     default:
-
-                        formatArguments =
-                            "-x " +
-                            "--audio-format mp3 " +
-                            "--audio-quality 0";
-
+                        arguments.Add("--audio-format");
+                        arguments.Add("mp3");
+                        arguments.Add("--audio-quality");
+                        arguments.Add("0");
                         break;
                 }
             }
-
             else if (type == "video")
             {
-                string videoFormat;
+                string videoFormat = string.IsNullOrWhiteSpace(height)
+                    ? "bestvideo[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]/bestvideo"
+                    : $"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]/bestvideo[height<={height}][ext=mp4]/bestvideo[height<={height}]";
 
-                if (string.IsNullOrWhiteSpace(height))
-                {
-                    videoFormat =
-                        "bestvideo[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]/bestvideo";
-                }
-                else
-                {
-                    videoFormat =
-                        $"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]/" +
-                        $"bestvideo[height<={height}][ext=mp4]/" +
-                        $"bestvideo[height<={height}]";
-                }
+                arguments.Add("-f");
+                arguments.Add(videoFormat);
 
                 switch (extension)
                 {
-                    case "mp4":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--remux-video mp4";
-
-                        break;
-
                     case "mkv":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mkv";
-
+                        arguments.Add("--merge-output-format");
+                        arguments.Add("mkv");
                         break;
 
                     case "webm":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format webm";
-
+                        arguments.Add("--merge-output-format");
+                        arguments.Add("webm");
                         break;
 
+                    case "mp4":
                     default:
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--remux-video mp4";
-
+                        arguments.Add("--remux-video");
+                        arguments.Add("mp4");
                         break;
                 }
             }
+            else if (type == "video + audio" ||
+                     type == "videoaudio")
+            {
+                string videoFormat = string.IsNullOrWhiteSpace(height)
+                    ? "bestvideo+bestaudio/best"
+                    : $"bestvideo[height<={height}]+bestaudio/best[height<={height}]";
 
+                arguments.Add("-f");
+                arguments.Add(videoFormat);
+
+                switch (extension)
+                {
+                    case "mkv":
+                        arguments.Add("--merge-output-format");
+                        arguments.Add("mkv");
+                        break;
+
+                    case "webm":
+                        arguments.Add("--merge-output-format");
+                        arguments.Add("webm");
+                        break;
+
+                    case "mp4":
+                    default:
+                        arguments.Add("--merge-output-format");
+                        arguments.Add("mp4");
+                        arguments.Add("--ppa");
+                        arguments.Add("Merger+ffmpeg_o:-c:a aac -b:a 192k");
+                        break;
+                }
+            }
             else
             {
-                string videoFormat;
-
-                if (string.IsNullOrWhiteSpace(height))
-                {
-                    videoFormat =
-                        "bestvideo+bestaudio/best";
-                }
-                else
-                {
-                    videoFormat =
-                        $"bestvideo[height<={height}]+bestaudio/" +
-                        $"best[height<={height}]";
-                }
-
-                switch (extension)
-                {
-                    case "mp4":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mp4 " +
-                            "--ppa \"Merger+ffmpeg_o:-c:a aac -b:a 192k\"";
-
-                        break;
-
-                    case "mkv":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mkv";
-
-                        break;
-
-                    case "webm":
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format webm";
-
-                        break;
-
-                    default:
-
-                        formatArguments =
-                            $"-f \"{videoFormat}\" " +
-                            "--merge-output-format mp4 " +
-                            "--ppa \"Merger+ffmpeg_o:-c:a aac -b:a 192k\"";
-
-                        break;
-                }
+                throw new ArgumentException(
+                    "Tipo de descarga no válido.",
+                    nameof(downloadType)
+                );
             }
 
-            string outputTemplate =
-                Path.Combine(
-                    savePath,
-                    "%(title)s.%(ext)s"
-                );
-
-            string arguments =
-                $"--newline " +
-                $"--no-warnings " +
-                $"--progress " +
-                $"--ffmpeg-location \"{_toolsPath}\" " +
-                $"{formatArguments} " +
-                $"-o \"{outputTemplate}\" " +
-                $"\"{url}\"";
-
-            statusCallback?.Invoke(
-                "Iniciando descarga..."
+            string outputTemplate = Path.Combine(
+                fullSavePath,
+                "%(title)s.%(ext)s"
             );
+
+            arguments.Add("-o");
+            arguments.Add(outputTemplate);
+
+            arguments.Add("--print");
+            arguments.Add("after_move:__MEDIADOWNLOADER_FILE__%(filepath)s");
+
+            arguments.Add("--");
+            arguments.Add(url.Trim());
+
+            statusCallback?.Invoke("Iniciando descarga...");
 
             ProcessResult result =
                 await _processService.ExecuteWithProgressAsync(
                     _ytDlpPath,
                     arguments,
-                    line =>
-                    {
-                        ParseDownloadProgress(
-                            line,
-                            progressCallback,
-                            statusCallback
-                        );
-                    },
+                    line => ParseDownloadProgress(
+                        line,
+                        progressCallback,
+                        statusCallback
+                    ),
                     cancellationToken
                 );
 
@@ -492,19 +363,177 @@ namespace MediaDownloader.Services
 
             if (!result.Success)
             {
-                string error =
-                    string.IsNullOrWhiteSpace(result.Error)
-                        ? "La descarga no pudo completarse."
-                        : result.Error.Trim();
+                throw new Exception(
+                    GetProcessError(
+                        result.Error,
+                        "La descarga no pudo completarse."
+                    )
+                );
+            }
 
-                throw new Exception(error);
+            string downloadedFile = ExtractDownloadedFilePath(result.Output);
+
+            if (string.IsNullOrWhiteSpace(downloadedFile))
+            {
+                throw new Exception(
+                    "La descarga terminó correctamente, pero no fue posible determinar el archivo generado."
+                );
+            }
+
+            downloadedFile = Path.GetFullPath(downloadedFile);
+
+            if (!File.Exists(downloadedFile))
+            {
+                throw new Exception(
+                    "yt-dlp indicó que la descarga terminó, pero el archivo no se encontró en la ubicación esperada."
+                );
+            }
+
+            string normalizedSavePath =
+                Path.GetFullPath(fullSavePath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+
+            if (!downloadedFile.StartsWith(
+                normalizedSavePath,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception(
+                    "La descarga generó un archivo fuera de la carpeta de destino."
+                );
             }
 
             progressCallback?.Invoke(100);
+            statusCallback?.Invoke("Descarga completada.");
 
-            statusCallback?.Invoke(
-                "Descarga completada."
+            return downloadedFile;
+        }
+
+        private static string ExtractDownloadedFilePath(string output)
+        {
+            const string marker = "__MEDIADOWNLOADER_FILE__";
+
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return string.Empty;
+            }
+
+            string[] lines = output.Split(
+                new[] { "\r\n", "\n", "\r" },
+                StringSplitOptions.RemoveEmptyEntries
             );
+
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                string line = lines[i].Trim();
+
+                int markerIndex =
+                    line.IndexOf(marker, StringComparison.Ordinal);
+
+                if (markerIndex < 0)
+                {
+                    continue;
+                }
+
+                string path =
+                    line[(markerIndex + marker.Length)..].Trim();
+
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    return path.Trim('\"');
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static void ValidateUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                throw new ArgumentException(
+                    "La URL no puede estar vacía.",
+                    nameof(url)
+                );
+            }
+
+            string trimmedUrl = url.Trim();
+
+            if (!Uri.TryCreate(
+                trimmedUrl,
+                UriKind.Absolute,
+                out Uri? uri))
+            {
+                throw new ArgumentException(
+                    "La URL no tiene un formato válido.",
+                    nameof(url)
+                );
+            }
+
+            if (uri.Scheme != Uri.UriSchemeHttp &&
+                uri.Scheme != Uri.UriSchemeHttps)
+            {
+                throw new ArgumentException(
+                    "Solo se permiten URLs HTTP o HTTPS.",
+                    nameof(url)
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(uri.Host))
+            {
+                throw new ArgumentException(
+                    "La URL debe incluir un dominio válido.",
+                    nameof(url)
+                );
+            }
+        }
+
+        private static void EnsureToolExists(
+            string path,
+            string toolName)
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    $"No se encontró {toolName}.",
+                    path
+                );
+            }
+        }
+
+        private static string GetProcessError(
+            string error,
+            string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return fallback;
+            }
+
+            string cleaned = error.Trim();
+
+            const int maxLength = 4000;
+
+            if (cleaned.Length > maxLength)
+            {
+                cleaned = cleaned[..maxLength] + "...";
+            }
+
+            return cleaned;
+        }
+
+        private static void TryDeleteDirectory(string directory)
+        {
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static string ExtractHeight(

@@ -66,6 +66,7 @@
 
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             pnlSidebar = new Panel();
             lblLogo = new Label();
             lblAppName = new Label();
@@ -625,6 +626,7 @@
             Controls.Add(pnlContent);
             Controls.Add(pnlHeader);
             Controls.Add(pnlSidebar);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1000, 650);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;

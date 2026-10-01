@@ -12,12 +12,11 @@ namespace MediaDownloader.Services
         private readonly string _historyDirectory;
         private readonly string _historyFile;
 
-
-    private readonly JsonSerializerOptions _jsonOptions =
-        new JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
+        private readonly JsonSerializerOptions _jsonOptions =
+            new JsonSerializerOptions
+            {
+                WriteIndented = true
+            };
 
         public HistoryService()
         {
@@ -34,7 +33,6 @@ namespace MediaDownloader.Services
             );
         }
 
-
         public async Task<List<DownloadHistory>> GetHistoryAsync()
         {
             try
@@ -45,9 +43,7 @@ namespace MediaDownloader.Services
                 }
 
                 string json =
-                    await File.ReadAllTextAsync(
-                        _historyFile
-                    );
+                    await File.ReadAllTextAsync(_historyFile);
 
                 if (string.IsNullOrWhiteSpace(json))
                 {
@@ -55,15 +51,12 @@ namespace MediaDownloader.Services
                 }
 
                 List<DownloadHistory>? history =
-                    JsonSerializer.Deserialize<
-                        List<DownloadHistory>
-                    >(
+                    JsonSerializer.Deserialize<List<DownloadHistory>>(
                         json,
                         _jsonOptions
                     );
 
-                return history
-                    ?? new List<DownloadHistory>();
+                return history ?? new List<DownloadHistory>();
             }
             catch
             {
@@ -71,41 +64,23 @@ namespace MediaDownloader.Services
             }
         }
 
-
-        public async Task AddAsync(
-            DownloadHistory history)
+        public async Task AddAsync(DownloadHistory history)
         {
             if (history == null)
             {
-                throw new ArgumentNullException(
-                    nameof(history)
-                );
+                throw new ArgumentNullException(nameof(history));
             }
 
             try
             {
-                Directory.CreateDirectory(
-                    _historyDirectory
-                );
+                Directory.CreateDirectory(_historyDirectory);
 
                 List<DownloadHistory> historyList =
                     await GetHistoryAsync();
 
-                historyList.Insert(
-                    0,
-                    history
-                );
+                historyList.Insert(0, history);
 
-                string json =
-                    JsonSerializer.Serialize(
-                        historyList,
-                        _jsonOptions
-                    );
-
-                await File.WriteAllTextAsync(
-                    _historyFile,
-                    json
-                );
+                await SaveHistoryAsync(historyList);
             }
             catch (Exception ex)
             {
@@ -116,9 +91,7 @@ namespace MediaDownloader.Services
             }
         }
 
-
-        public async Task DeleteAsync(
-            DownloadHistory history)
+        public async Task DeleteAsync(DownloadHistory history)
         {
             if (history == null)
             {
@@ -132,16 +105,7 @@ namespace MediaDownloader.Services
 
                 historyList.Remove(history);
 
-                string json =
-                    JsonSerializer.Serialize(
-                        historyList,
-                        _jsonOptions
-                    );
-
-                await File.WriteAllTextAsync(
-                    _historyFile,
-                    json
-                );
+                await SaveHistoryAsync(historyList);
             }
             catch (Exception ex)
             {
@@ -152,16 +116,13 @@ namespace MediaDownloader.Services
             }
         }
 
-
         public Task ClearAsync()
         {
             try
             {
                 if (File.Exists(_historyFile))
                 {
-                    File.Delete(
-                        _historyFile
-                    );
+                    File.Delete(_historyFile);
                 }
 
                 return Task.CompletedTask;
@@ -175,7 +136,6 @@ namespace MediaDownloader.Services
             }
         }
 
-
         public async Task<bool> HasHistoryAsync()
         {
             List<DownloadHistory> history =
@@ -183,7 +143,47 @@ namespace MediaDownloader.Services
 
             return history.Count > 0;
         }
+
+        private async Task SaveHistoryAsync(
+            List<DownloadHistory> history)
+        {
+            string json =
+                JsonSerializer.Serialize(
+                    history,
+                    _jsonOptions
+                );
+
+            string tempFile =
+                _historyFile + ".tmp";
+
+            await File.WriteAllTextAsync(
+                tempFile,
+                json
+            );
+
+            try
+            {
+                File.Move(
+                    tempFile,
+                    _historyFile,
+                    overwrite: true
+                );
+            }
+            catch
+            {
+                try
+                {
+                    if (File.Exists(tempFile))
+                    {
+                        File.Delete(tempFile);
+                    }
+                }
+                catch
+                {
+                }
+
+                throw;
+            }
+        }
     }
-
-
 }

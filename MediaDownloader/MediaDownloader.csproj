@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>media.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="media.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <Folder Include="Controls\" />
@@ -17,7 +22,7 @@
 
   <ItemGroup>
     <None Update="Tools\ffmpeg.exe">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="Tools\yt-dlp.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

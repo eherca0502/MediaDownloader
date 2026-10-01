@@ -40,11 +40,11 @@ namespace MediaDownloader.Forms
                     await _settingsService
                         .GetSettingsAsync();
 
-                
+
                 txtDownloadPath.Text =
                     _settings.DownloadPath;
 
-                
+
                 int typeIndex =
                     cmbDefaultType.Items.IndexOf(
                         _settings.DefaultType
@@ -75,15 +75,15 @@ namespace MediaDownloader.Forms
                         ? formatIndex
                         : 0;
 
-                
+
                 chkSaveHistory.Checked =
                     _settings.SaveHistory;
 
-                
+
                 chkConfirmCancel.Checked =
                     _settings.ConfirmCancel;
 
-                
+
                 chkShowNotifications.Checked =
                     _settings.ShowNotifications;
             }
@@ -147,7 +147,7 @@ namespace MediaDownloader.Forms
                 return;
             }
 
-            
+
             if (!Directory.Exists(downloadPath))
             {
                 DialogResult createResult =
@@ -223,37 +223,38 @@ namespace MediaDownloader.Forms
 
             try
             {
-                
+
                 _settings.DownloadPath =
                     downloadPath;
 
-                
+
                 _settings.DefaultType =
                     cmbDefaultType.SelectedItem
                         .ToString()
                         ?? "Video";
 
-                
+
                 _settings.DefaultQuality =
                     cmbDefaultQuality.SelectedItem
                         .ToString()
                         ?? "Mejor calidad";
 
-                
+
                 _settings.DefaultFormat =
                     cmbDefaultFormat.SelectedItem
                         .ToString()
                         ?? "MP4";
 
-                
+                NormalizeDefaultFormatForType();
+
                 _settings.SaveHistory =
                     chkSaveHistory.Checked;
 
-                
+
                 _settings.ConfirmCancel =
                     chkConfirmCancel.Checked;
 
-                
+
                 _settings.ShowNotifications =
                     chkShowNotifications.Checked;
 
@@ -286,6 +287,42 @@ namespace MediaDownloader.Forms
             }
         }
 
+        private void NormalizeDefaultFormatForType()
+        {
+            string type =
+                _settings.DefaultType.Trim();
+
+            bool audio =
+                type.Equals(
+                    "Audio",
+                    StringComparison.OrdinalIgnoreCase
+                );
+
+            bool valid = audio
+                ? _settings.DefaultFormat.Equals("MP3", StringComparison.OrdinalIgnoreCase) ||
+                  _settings.DefaultFormat.Equals("M4A", StringComparison.OrdinalIgnoreCase) ||
+                  _settings.DefaultFormat.Equals("WAV", StringComparison.OrdinalIgnoreCase)
+                : _settings.DefaultFormat.Equals("MP4", StringComparison.OrdinalIgnoreCase) ||
+                  _settings.DefaultFormat.Equals("MKV", StringComparison.OrdinalIgnoreCase) ||
+                  _settings.DefaultFormat.Equals("WEBM", StringComparison.OrdinalIgnoreCase);
+
+            if (!valid)
+            {
+                _settings.DefaultFormat =
+                    audio ? "MP3" : "MP4";
+
+                int index =
+                    cmbDefaultFormat.Items.IndexOf(
+                        _settings.DefaultFormat
+                    );
+
+                if (index >= 0)
+                {
+                    cmbDefaultFormat.SelectedIndex = index;
+                }
+            }
+        }
+
         private async void btnReset_Click(
             object? sender,
             EventArgs e)
@@ -309,11 +346,11 @@ namespace MediaDownloader.Forms
                     await _settingsService
                         .ResetSettingsAsync();
 
-                
+
                 txtDownloadPath.Text =
                     _settings.DownloadPath;
 
-                
+
                 int typeIndex =
                     cmbDefaultType.Items.IndexOf(
                         _settings.DefaultType
@@ -324,7 +361,7 @@ namespace MediaDownloader.Forms
                         ? typeIndex
                         : 0;
 
-                
+
                 int qualityIndex =
                     cmbDefaultQuality.Items.IndexOf(
                         _settings.DefaultQuality
@@ -335,7 +372,7 @@ namespace MediaDownloader.Forms
                         ? qualityIndex
                         : 0;
 
-                
+
                 int formatIndex =
                     cmbDefaultFormat.Items.IndexOf(
                         _settings.DefaultFormat
@@ -346,15 +383,15 @@ namespace MediaDownloader.Forms
                         ? formatIndex
                         : 0;
 
-             
+
                 chkSaveHistory.Checked =
                     _settings.SaveHistory;
 
-              
+
                 chkConfirmCancel.Checked =
                     _settings.ConfirmCancel;
 
-              
+
                 chkShowNotifications.Checked =
                     _settings.ShowNotifications;
 

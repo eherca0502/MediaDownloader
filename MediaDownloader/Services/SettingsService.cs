@@ -11,15 +11,14 @@ namespace MediaDownloader.Services
     {
         private readonly string _settingsPath;
 
-
-    private readonly JsonSerializerOptions _jsonOptions =
-        new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNameCaseInsensitive = true,
-            DefaultIgnoreCondition =
-                JsonIgnoreCondition.Never
-        };
+        private readonly JsonSerializerOptions _jsonOptions =
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNameCaseInsensitive = true,
+                DefaultIgnoreCondition =
+                    JsonIgnoreCondition.Never
+            };
 
         public SettingsService()
         {
@@ -31,9 +30,7 @@ namespace MediaDownloader.Services
                     "MediaDownloader"
                 );
 
-            Directory.CreateDirectory(
-                appDataPath
-            );
+            Directory.CreateDirectory(appDataPath);
 
             _settingsPath =
                 Path.Combine(
@@ -51,27 +48,19 @@ namespace MediaDownloader.Services
                     AppSettings defaultSettings =
                         CreateDefaultSettings();
 
-                    await SaveSettingsAsync(
-                        defaultSettings
-                    );
-
+                    await SaveSettingsAsync(defaultSettings);
                     return defaultSettings;
                 }
 
                 string json =
-                    await File.ReadAllTextAsync(
-                        _settingsPath
-                    );
+                    await File.ReadAllTextAsync(_settingsPath);
 
                 if (string.IsNullOrWhiteSpace(json))
                 {
                     AppSettings defaultSettings =
                         CreateDefaultSettings();
 
-                    await SaveSettingsAsync(
-                        defaultSettings
-                    );
-
+                    await SaveSettingsAsync(defaultSettings);
                     return defaultSettings;
                 }
 
@@ -86,13 +75,11 @@ namespace MediaDownloader.Services
                     AppSettings defaultSettings =
                         CreateDefaultSettings();
 
-                    await SaveSettingsAsync(
-                        defaultSettings
-                    );
-
+                    await SaveSettingsAsync(defaultSettings);
                     return defaultSettings;
                 }
 
+                NormalizeSettings(settings);
                 return settings;
             }
             catch
@@ -101,15 +88,14 @@ namespace MediaDownloader.Services
             }
         }
 
-        public async Task SaveSettingsAsync(
-            AppSettings settings)
+        public async Task SaveSettingsAsync(AppSettings settings)
         {
             if (settings == null)
             {
-                throw new ArgumentNullException(
-                    nameof(settings)
-                );
+                throw new ArgumentNullException(nameof(settings));
             }
+
+            NormalizeSettings(settings);
 
             try
             {
@@ -119,13 +105,36 @@ namespace MediaDownloader.Services
                         _jsonOptions
                     );
 
+                string tempPath =
+                    _settingsPath + ".tmp";
+
                 await File.WriteAllTextAsync(
-                    _settingsPath,
+                    tempPath,
                     json
+                );
+
+                File.Move(
+                    tempPath,
+                    _settingsPath,
+                    overwrite: true
                 );
             }
             catch (Exception ex)
             {
+                try
+                {
+                    string tempPath =
+                        _settingsPath + ".tmp";
+
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                {
+                }
+
                 throw new IOException(
                     "No fue posible guardar la configuración.",
                     ex
@@ -133,25 +142,18 @@ namespace MediaDownloader.Services
             }
         }
 
-        
-        public async Task<AppSettings>
-            ResetSettingsAsync()
+        public async Task<AppSettings> ResetSettingsAsync()
         {
             AppSettings defaultSettings =
                 CreateDefaultSettings();
 
-            await SaveSettingsAsync(
-                defaultSettings
-            );
-
+            await SaveSettingsAsync(defaultSettings);
             return defaultSettings;
         }
 
         public bool SettingsExists()
         {
-            return File.Exists(
-                _settingsPath
-            );
+            return File.Exists(_settingsPath);
         }
 
         public string GetSettingsPath()
@@ -159,13 +161,12 @@ namespace MediaDownloader.Services
             return _settingsPath;
         }
 
-        
         public AppSettings GetDefaultSettings()
         {
             return CreateDefaultSettings();
         }
 
-        private AppSettings CreateDefaultSettings()
+        private static AppSettings CreateDefaultSettings()
         {
             return new AppSettings
             {
@@ -173,19 +174,39 @@ namespace MediaDownloader.Services
                     Environment.GetFolderPath(
                         Environment.SpecialFolder.MyVideos
                     ),
-
-                DefaultQuality =
-                    "Mejor calidad",
-
-                DefaultFormat =
-                    "MP4",
-
-                ShowCompletionMessage =
-                    true
+                DefaultType = "Video",
+                DefaultQuality = "Mejor calidad",
+                DefaultFormat = "MP4",
+                SaveHistory = true,
+                ConfirmCancel = true,
+                ShowNotifications = true
             };
         }
+
+        private static void NormalizeSettings(AppSettings settings)
+        {
+            if (string.IsNullOrWhiteSpace(settings.DownloadPath))
+            {
+                settings.DownloadPath =
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.MyVideos
+                    );
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.DefaultType))
+            {
+                settings.DefaultType = "Video";
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.DefaultQuality))
+            {
+                settings.DefaultQuality = "Mejor calidad";
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.DefaultFormat))
+            {
+                settings.DefaultFormat = "MP4";
+            }
+        }
     }
-
-
 }
-

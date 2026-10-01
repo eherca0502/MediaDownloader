@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,41 +11,30 @@ namespace MediaDownloader.Services
     {
         public async Task<ProcessResult> ExecuteAsync(
             string fileName,
-            string arguments,
+            IReadOnlyList<string> arguments,
             CancellationToken cancellationToken = default)
         {
-            using Process process = new Process();
+            using Process process = CreateProcess(fileName, arguments);
 
-            process.StartInfo = new ProcessStartInfo
+            if (!process.Start())
             {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            process.Start();
+                throw new InvalidOperationException(
+                    $"No fue posible iniciar el proceso: {fileName}"
+                );
+            }
 
             try
             {
                 Task<string> outputTask =
-                    process.StandardOutput.ReadToEndAsync(
-                        cancellationToken);
+                    process.StandardOutput.ReadToEndAsync(cancellationToken);
 
                 Task<string> errorTask =
-                    process.StandardError.ReadToEndAsync(
-                        cancellationToken);
+                    process.StandardError.ReadToEndAsync(cancellationToken);
 
-                await process.WaitForExitAsync(
-                    cancellationToken);
+                await process.WaitForExitAsync(cancellationToken);
 
-                string output =
-                    await outputTask;
-
-                string error =
-                    await errorTask;
+                string output = await outputTask;
+                string error = await errorTask;
 
                 return new ProcessResult
                 {
@@ -55,80 +46,117 @@ namespace MediaDownloader.Services
             catch (OperationCanceledException)
             {
                 TryKillProcess(process);
-
                 throw;
             }
         }
 
         public async Task<ProcessResult> ExecuteWithProgressAsync(
             string fileName,
-            string arguments,
+            IReadOnlyList<string> arguments,
             Action<string>? outputReceived = null,
             CancellationToken cancellationToken = default)
         {
-            using Process process = new Process();
+            using Process process = CreateProcess(fileName, arguments);
 
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
+            StringBuilder outputBuilder = new StringBuilder();
+            StringBuilder errorBuilder = new StringBuilder();
 
             process.OutputDataReceived += (sender, e) =>
             {
-                if (!string.IsNullOrWhiteSpace(e.Data))
+                if (e.Data == null)
                 {
-                    outputReceived?.Invoke(e.Data);
+                    return;
                 }
+
+                outputBuilder.AppendLine(e.Data);
+                outputReceived?.Invoke(e.Data);
             };
 
             process.ErrorDataReceived += (sender, e) =>
             {
-                if (!string.IsNullOrWhiteSpace(e.Data))
+                if (e.Data == null)
                 {
-                    outputReceived?.Invoke(e.Data);
+                    return;
                 }
+
+                errorBuilder.AppendLine(e.Data);
             };
 
-            process.Start();
+            if (!process.Start())
+            {
+                throw new InvalidOperationException(
+                    $"No fue posible iniciar el proceso: {fileName}"
+                );
+            }
 
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
             try
             {
-                await process.WaitForExitAsync(
-                    cancellationToken);
+                await process.WaitForExitAsync(cancellationToken);
+
+                process.WaitForExit();
 
                 return new ProcessResult
                 {
                     ExitCode = process.ExitCode,
-                    Output = string.Empty,
-                    Error = string.Empty
+                    Output = outputBuilder.ToString(),
+                    Error = errorBuilder.ToString()
                 };
             }
             catch (OperationCanceledException)
             {
                 TryKillProcess(process);
-
                 throw;
             }
         }
 
-        private static void TryKillProcess(
-            Process process)
+        private static Process CreateProcess(
+            string fileName,
+            IReadOnlyList<string> arguments)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                throw new ArgumentException(
+                    "El nombre del ejecutable no puede estar vacío.",
+                    nameof(fileName)
+                );
+            }
+
+            if (arguments == null)
+            {
+                throw new ArgumentNullException(nameof(arguments));
+            }
+
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = AppContext.BaseDirectory
+            };
+
+            foreach (string argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            return new Process
+            {
+                StartInfo = startInfo
+            };
+        }
+
+        private static void TryKillProcess(Process process)
         {
             try
             {
                 if (!process.HasExited)
                 {
-                    process.Kill(
-                        entireProcessTree: true
-                    );
+                    process.Kill(entireProcessTree: true);
                 }
             }
             catch
@@ -141,13 +169,10 @@ namespace MediaDownloader.Services
     {
         public int ExitCode { get; set; }
 
-        public string Output { get; set; } =
-            string.Empty;
+        public string Output { get; set; } = string.Empty;
 
-        public string Error { get; set; } =
-            string.Empty;
+        public string Error { get; set; } = string.Empty;
 
-        public bool Success =>
-            ExitCode == 0;
+        public bool Success => ExitCode == 0;
     }
 }
