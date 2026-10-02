@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="MediaDownloader/assets/MediaDownloader.png" alt="MediaDownloader" width="180">
+<img src="media.png" alt="MediaDownloader" width="180">
 
 # MediaDownloader
 
